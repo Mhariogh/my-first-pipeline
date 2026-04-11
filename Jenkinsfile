@@ -41,7 +41,7 @@ pipeline {
                     docker run -d \
                       --name myapp-container \
                       --restart unless-stopped \
-                      -p 8080:8080 \
+                      -p 9090:8080 \
                       myapp:${BUILD_NUMBER}
                     echo "✅ App deployed!"
                     docker ps | grep myapp-container
