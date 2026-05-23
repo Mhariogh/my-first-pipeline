@@ -8,7 +8,6 @@ pipeline {
     EKS_CLUSTER    = credentials('EKS_CLUSTER_NAME')
     KUBE_NAMESPACE = credentials('KUBE_NAMESPACE')
     IMAGE_TAG      = "${env.BUILD_NUMBER}"
-    APP_DIR        = "cloud-native-lab"
   }
 
   stages {
@@ -16,7 +15,7 @@ pipeline {
     stage('Checkout') {
       steps {
         checkout scm
-        sh 'ls -la && ls -la $APP_DIR || ls -la'
+        sh 'ls -la'
         echo "Building commit: ${env.GIT_COMMIT?.take(7)}"
       }
     }
@@ -24,7 +23,7 @@ pipeline {
     stage('Test') {
       steps {
         sh '''
-          cd $APP_DIR/backend
+          cd backend
           npm install
           echo "Tests passed"
         '''
@@ -43,7 +42,7 @@ pipeline {
     stage('Build & Push Backend') {
       steps {
         sh '''
-          docker build -t $ECR_REGISTRY/cloud-native-app/backend:$IMAGE_TAG ./$APP_DIR/backend
+          docker build -t $ECR_REGISTRY/cloud-native-app/backend:$IMAGE_TAG ./backend
           docker push $ECR_REGISTRY/cloud-native-app/backend:$IMAGE_TAG
           docker tag $ECR_REGISTRY/cloud-native-app/backend:$IMAGE_TAG \
             $ECR_REGISTRY/cloud-native-app/backend:latest
@@ -55,7 +54,7 @@ pipeline {
     stage('Build & Push Frontend') {
       steps {
         sh '''
-          docker build -t $ECR_REGISTRY/cloud-native-app/frontend:$IMAGE_TAG ./$APP_DIR/frontend
+          docker build -t $ECR_REGISTRY/cloud-native-app/frontend:$IMAGE_TAG ./frontend
           docker push $ECR_REGISTRY/cloud-native-app/frontend:$IMAGE_TAG
           docker tag $ECR_REGISTRY/cloud-native-app/frontend:$IMAGE_TAG \
             $ECR_REGISTRY/cloud-native-app/frontend:latest
