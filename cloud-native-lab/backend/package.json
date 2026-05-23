@@ -1,0 +1,6 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "pg": "^8.11.0", "redis": "^4.6.0" }
+}
