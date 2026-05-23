@@ -1,0 +1,99 @@
+pipeline {
+  agent any
+
+  environment {
+    AWS_ACCOUNT_ID = credentials('AWS_ACCOUNT_ID')
+    AWS_REGION     = credentials('AWS_REGION')
+    ECR_REGISTRY   = credentials('ECR_REGISTRY')
+    EKS_CLUSTER    = credentials('EKS_CLUSTER_NAME')
+    KUBE_NAMESPACE = credentials('KUBE_NAMESPACE')
+    IMAGE_TAG      = "${env.BUILD_NUMBER}"
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        checkout scm
+        echo "Building commit: ${env.GIT_COMMIT?.take(7)}"
+      }
+    }
+
+    stage('Test') {
+      steps {
+        sh '''
+          cd backend
+          npm install
+          echo "Tests passed"
+        '''
+      }
+    }
+
+    stage('Login to ECR') {
+      steps {
+        sh '''
+          aws ecr get-login-password --region $AWS_REGION | \
+            docker login --username AWS --password-stdin $ECR_REGISTRY
+        '''
+      }
+    }
+
+    stage('Build & Push Backend') {
+      steps {
+        sh '''
+          docker build -t $ECR_REGISTRY/cloud-native-app/backend:$IMAGE_TAG ./backend
+          docker push $ECR_REGISTRY/cloud-native-app/backend:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/cloud-native-app/backend:$IMAGE_TAG \
+            $ECR_REGISTRY/cloud-native-app/backend:latest
+          docker push $ECR_REGISTRY/cloud-native-app/backend:latest
+        '''
+      }
+    }
+
+    stage('Build & Push Frontend') {
+      steps {
+        sh '''
+          docker build -t $ECR_REGISTRY/cloud-native-app/frontend:$IMAGE_TAG ./frontend
+          docker push $ECR_REGISTRY/cloud-native-app/frontend:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/cloud-native-app/frontend:$IMAGE_TAG \
+            $ECR_REGISTRY/cloud-native-app/frontend:latest
+          docker push $ECR_REGISTRY/cloud-native-app/frontend:latest
+        '''
+      }
+    }
+
+    stage('Deploy to EKS') {
+      steps {
+        sh '''
+          export KUBECONFIG=/var/lib/jenkins/.kube/config
+          kubectl set image deployment/backend \
+            backend=$ECR_REGISTRY/cloud-native-app/backend:$IMAGE_TAG \
+            -n $KUBE_NAMESPACE
+          kubectl set image deployment/frontend \
+            frontend=$ECR_REGISTRY/cloud-native-app/frontend:$IMAGE_TAG \
+            -n $KUBE_NAMESPACE
+          kubectl rollout status deployment/backend  -n $KUBE_NAMESPACE --timeout=120s
+          kubectl rollout status deployment/frontend -n $KUBE_NAMESPACE --timeout=120s
+        '''
+      }
+    }
+
+    stage('Verify') {
+      steps {
+        sh '''
+          export KUBECONFIG=/var/lib/jenkins/.kube/config
+          echo "=== Pods ==="
+          kubectl get pods -n $KUBE_NAMESPACE
+          echo "=== Ingress ==="
+          kubectl get ingress -n $KUBE_NAMESPACE
+        '''
+      }
+    }
+  }
+
+  post {
+    success { echo "Pipeline succeeded! Build #${env.BUILD_NUMBER} deployed." }
+    failure { echo "Pipeline failed. Check logs above." }
+    always  { sh 'docker system prune -f || true' }
+  }
+}
