@@ -1,0 +1,16 @@
+# Keys and secrets
+*.pem
+*.key
+*.env
+
+# AWS and temp files
+iam_policy.json
+awscliv2.zip
+eksctl.zip
+
+# Windows system files
+*.DAT
+*.blf
+*.regtrans-ms
+ntuser.*
+NTUSER.*
