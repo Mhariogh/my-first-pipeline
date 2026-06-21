@@ -1,0 +1,32 @@
+# Project 3 runs Jenkins with the HOST's Docker, not Docker-in-Docker.
+#
+# Why the change from Projects 1 and 2: in this project the pipeline
+# DEPLOYS the app and you need to reach it in a browser. By using the
+# host's Docker socket, containers the pipeline starts run on the host
+# and their published ports are reachable at the host's address.
+#
+# Note: mounting the Docker socket and running as root gives Jenkins
+# full control of the host's Docker. That is fine for a short-lived
+# learning server, but is not how you would secure a production Jenkins.
+#
+# Start:  docker compose up -d --build
+# Stop:   docker compose down
+# Reset:  docker compose down -v
+
+services:
+  jenkins:
+    build:
+      context: ./jenkins
+      dockerfile: Dockerfile
+    container_name: jenkins
+    restart: unless-stopped
+    user: root
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins-data:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  jenkins-data:

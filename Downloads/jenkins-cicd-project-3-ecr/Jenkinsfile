@@ -1,0 +1,96 @@
+// Project 3: Continuous Delivery to AWS ECR.
+//
+// This is Project 2 plus two new stages: Push (send the image to ECR)
+// and Deploy (run the image so the app is reachable). Together they turn
+// continuous integration into full CI/CD.
+//
+// EDIT the three values marked below to match your AWS account.
+
+pipeline {
+    agent any
+
+    environment {
+        // ----- EDIT THESE THREE -----
+        AWS_REGION  = 'us-east-1'          // your region
+        ECR_ACCOUNT = '664267705879'       // your 12-digit AWS account id
+        ECR_REPO    = 'jenkins-cicd-project-3'     // the ECR repository name
+        // ----------------------------
+
+        IMAGE_TAG    = "${BUILD_NUMBER}"
+        ECR_REGISTRY = "${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        IMAGE        = "${ECR_REGISTRY}/${ECR_REPO}"
+        APP_PORT     = '8081'              // host port the deployed app is published on
+
+        // Pulls the Jenkins credential with id 'aws-ecr'.
+        // This creates AWS_CREDS_USR (access key id) and AWS_CREDS_PSW (secret).
+        AWS_CREDS    = credentials('aws-ecr')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps { checkout scm }
+        }
+
+        stage('Build') {
+            steps { dir('app') { sh 'mvn -B -ntp clean compile' } }
+        }
+
+        stage('Test') {
+            steps { dir('app') { sh 'mvn -B -ntp test' } }
+            post { always { junit 'app/target/surefire-reports/*.xml' } }
+        }
+
+        stage('Package') {
+            steps { dir('app') { sh 'mvn -B -ntp package -DskipTests' } }
+        }
+
+        stage('Docker Build') {
+            steps {
+                dir('app') {
+                    sh 'docker build -t ${IMAGE}:${IMAGE_TAG} -t ${IMAGE}:latest .'
+                }
+            }
+        }
+
+        stage('Push to ECR') {
+            steps {
+                sh '''
+                    export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
+                    export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
+
+                    # Create the repository the first time, ignore the error if it exists.
+                    aws ecr describe-repositories --region ${AWS_REGION} --repository-names ${ECR_REPO} \
+                      || aws ecr create-repository --region ${AWS_REGION} --repository-name ${ECR_REPO}
+
+                    # Log Docker in to ECR, then push both tags.
+                    aws ecr get-login-password --region ${AWS_REGION} \
+                      | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+
+                    docker push ${IMAGE}:${IMAGE_TAG}
+                    docker push ${IMAGE}:latest
+                '''
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                    # Replace any previous version, then run the new image from ECR.
+                    docker rm -f cicd-app || true
+                    docker run -d --name cicd-app -p ${APP_PORT}:8080 ${IMAGE}:${IMAGE_TAG}
+                    docker ps --filter name=cicd-app
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Deployed ${IMAGE}:${IMAGE_TAG}"
+            echo "Browse the app at http://<your-host-ip>:${APP_PORT}/ (use localhost if running locally)"
+        }
+        failure {
+            echo 'Pipeline failed. Scroll up and read the first red error in the log.'
+        }
+    }
+}
